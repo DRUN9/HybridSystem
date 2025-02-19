@@ -1,6 +1,8 @@
 ﻿using ILGPU;
 using ILGPU.Runtime;
 using ConsoleTables;
+using System.Diagnostics;
+using System.Security.Cryptography;
 
 class Program
 {
@@ -8,23 +10,19 @@ class Program
     {
         if (array1[index] == array2[index])
         {
-            result[index] = 1;
+            result[index] = index;
         }
         else
         {
-            result[index] = 0;
+            result[index] = -1;
         }
     }
 
     static void InnerJoinKernel(Index1D index, ArrayView<int> array, ArrayView<int> mask, ArrayView<int> result)     
     {
-        if (mask[index] == 1)
+        if (mask[index] != -1)
         {
-            result[index] = array[index];
-        }
-        else
-        {
-            result[index] = 0;
+            result[index] = array[mask[index]];
         }
     }
 
@@ -149,6 +147,9 @@ class Program
         var crossJoinKernel1 = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<int>, ArrayView<int>>(CrossJoinKernel1);
         var crossJoinKernel2 = accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView<int>, ArrayView<int>>(CrossJoinKernel2);
 
+        Stopwatch stopwatch = new Stopwatch();
+
+        stopwatch.Start();
         if (flag)
         {
             crossJoinKernel1(length, dArray1.View, dResult.View);
@@ -157,6 +158,9 @@ class Program
         {
             crossJoinKernel2(length, dArray2.View, dResult.View);
         }
+        stopwatch.Stop();
+
+        Console.WriteLine(stopwatch.ElapsedMilliseconds);
 
         dResult.CopyToCPU(result);
     }
@@ -381,6 +385,9 @@ class Program
         int[] result6 = new int[5];
 
         InnerJoinMask(h3, h6, mask);
+
+        Console.WriteLine("Результат фильтрации:");
+        Console.WriteLine(string.Join(", ", mask));
 
         InnerJoin(h1, mask, result1);
         InnerJoin(h2, mask, result2);
@@ -788,9 +795,34 @@ class Program
         table3.Write();
     }
 
+    static int[] GenerateArray(int length)
+    {
+        Random random = new Random();
+        int[] array = new int[length];
+        for (int i = 0; i < length; i++)
+        {
+            array[i] = random.Next();
+        }
+        return array;
+    }
+
     static void Main()
     {
-        InnerJoinDemo();
+        int bytes = 100;
+
+        int elementSize = sizeof(int); // Размер одного int в байтах
+        int arrayLength = bytes / elementSize;
+
+        Console.Write("arrlen = ");
+        Console.WriteLine(arrayLength);
+
+        int[] a1 = GenerateArray(arrayLength);
+        int[] a2 = GenerateArray(arrayLength);
+        int[] res = new int[arrayLength * arrayLength];
+
+        CrossJoin(a1, a2, res, true);
+
+        //InnerJoinDemo();
         //LeftOuterJoinDemo();
         //RightOuterJoinDemo();
         //CrossJoinDemo();

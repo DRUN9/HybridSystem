@@ -1,7 +1,4 @@
-﻿using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using ILGPU;
+﻿using ILGPU;
 using ILGPU.Runtime;
 
 namespace CPU_GPU_System
@@ -26,6 +23,9 @@ namespace CPU_GPU_System
         public Dictionary<Type, Delegate> selectionKernels;
         public Dictionary<Type, Delegate> innerJoinMaskKernels;
         public Dictionary<Type, Delegate> innerJoinKernels;
+        public Dictionary<Type, Delegate> crossJoinKernels1;
+        public Dictionary<Type, Delegate> crossJoinKernels2;
+        public Dictionary<Type, Delegate> unionKernels;
 
         public GPUExecutor()
         {
@@ -38,9 +38,11 @@ namespace CPU_GPU_System
             this.selectionKernels = new Dictionary<Type, Delegate>();
             this.innerJoinMaskKernels = new Dictionary<Type, Delegate>();
             this.innerJoinKernels = new Dictionary<Type, Delegate>();
+            this.crossJoinKernels1 = new Dictionary<Type, Delegate>();
+            this.crossJoinKernels2 = new Dictionary<Type, Delegate>();
+            this.unionKernels = new Dictionary<Type, Delegate>();
 
             this.LoadKernels();
-
         }
 
         ~GPUExecutor()
@@ -93,6 +95,55 @@ namespace CPU_GPU_System
             this.innerJoinKernels[typeof(int)] = loadedInnJoinKernelInt;
             this.innerJoinKernels[typeof(float)] = loadedInnJoinKernelFloat;
             this.innerJoinKernels[typeof(double)] = loadedInnJoinKernelDouble;
+
+            Action<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>> loadedCrossJoinKernel1Int = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>>(CrossJoinKernel1);
+            Action<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>> loadedCrossJoinKernel1Float = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>>(CrossJoinKernel1);
+            Action<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>> loadedCrossJoinKernel1Double = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>>(CrossJoinKernel1);
+
+            this.crossJoinKernels1[typeof(int)] = loadedCrossJoinKernel1Int;
+            this.crossJoinKernels1[typeof(float)] = loadedCrossJoinKernel1Float;
+            this.crossJoinKernels1[typeof(double)] = loadedCrossJoinKernel1Double;
+
+            Action<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>> loadedCrossJoinKernel2Int = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>>(CrossJoinKernel2);
+            Action<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>> loadedCrossJoinKernel2Float = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>>(CrossJoinKernel2);
+            Action<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>> loadedCrossJoinKernel2Double = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>>(CrossJoinKernel2);
+
+            this.crossJoinKernels2[typeof(int)] = loadedCrossJoinKernel2Int;
+            this.crossJoinKernels2[typeof(float)] = loadedCrossJoinKernel2Float;
+            this.crossJoinKernels2[typeof(double)] = loadedCrossJoinKernel2Double;
+
+            Action<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>> loadedUnionKernelInt = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>, ArrayView1D<Optional<int>, Stride1D.Dense>>(UnionKernel);
+            Action<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>> loadedUnionKernelFloat = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>, ArrayView1D<Optional<float>, Stride1D.Dense>>(UnionKernel);
+            Action<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>> loadedUnionKernelDouble = this.accelerator.LoadAutoGroupedStreamKernel<Index1D, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>, ArrayView1D<Optional<double>, Stride1D.Dense>>(UnionKernel);
+
+            this.unionKernels[typeof(int)] = loadedUnionKernelInt;
+            this.unionKernels[typeof(float)] = loadedUnionKernelFloat;
+            this.unionKernels[typeof(double)] = loadedUnionKernelDouble;
+
+        }
+
+        static void UnionKernel<T>(Index1D index, ArrayView1D<T, Stride1D.Dense> array1, ArrayView1D<T, Stride1D.Dense> array2, ArrayView1D<T, Stride1D.Dense> result) where T : unmanaged
+        {
+            if (index < array1.IntLength)
+            {
+                result[index] = array1[index];
+            }
+            else
+            {
+                result[index] = array2[index - array1.IntLength];
+            }
+        }
+
+        static void CrossJoinKernel1<T>(Index1D index, ArrayView1D<T, Stride1D.Dense> array, ArrayView1D<T, Stride1D.Dense> result) where T : unmanaged
+        {
+            long k = result.IntLength / array.IntLength;
+
+            result[index] = array[index / k];
+        }
+
+        static void CrossJoinKernel2<T>(Index1D index, ArrayView1D<T, Stride1D.Dense> array, ArrayView1D<T, Stride1D.Dense> result) where T : unmanaged
+        {
+            result[index] = array[index % array.Length];
         }
 
         static void ProjectionKernel<T>(Index1D index, ArrayView1D<T, Stride1D.Dense> data, short flag) where T : unmanaged
@@ -254,6 +305,32 @@ namespace CPU_GPU_System
 
         }
 
+        void ExecuteCrossJoin<T>(MemoryBuffer1D<T, Stride1D.Dense> array, MemoryBuffer1D<T, Stride1D.Dense> result, bool flag, int length) where T : unmanaged
+        {
+            var kernelDelegate1 = (Action<Index1D, ArrayView1D<T, Stride1D.Dense>, ArrayView1D<T, Stride1D.Dense>>)this.crossJoinKernels1[typeof(T)];
+            var kernelDelegate2 = (Action<Index1D, ArrayView1D<T, Stride1D.Dense>, ArrayView1D<T, Stride1D.Dense>>)this.crossJoinKernels2[typeof(T)];
+
+            this.accelerator.Synchronize();
+            if (flag)
+            {
+                kernelDelegate1(length, array.View, result.View);
+            }
+            else
+            {
+                kernelDelegate2(length, array.View, result.View);
+            }
+            this.accelerator.Synchronize();
+        }
+
+        void ExecuteUnion<T>(MemoryBuffer1D<T, Stride1D.Dense> array1, MemoryBuffer1D<T, Stride1D.Dense> array2, MemoryBuffer1D<T, Stride1D.Dense> result) where T : unmanaged
+        {
+            var kernelDelegate = (Action<Index1D, ArrayView1D<T, Stride1D.Dense>, ArrayView1D<T, Stride1D.Dense>, ArrayView1D<T, Stride1D.Dense>>)this.unionKernels[typeof(T)];
+
+            this.accelerator.Synchronize();
+            kernelDelegate((Index1D)result.Length, array1.View, array2.View, result.View);
+            this.accelerator.Synchronize();
+        }
+
         public void Projection(ref Relation relation, ref string[] headers)
         {
             short[] mask = new short[relation.Count];
@@ -355,79 +432,222 @@ namespace CPU_GPU_System
             }
         }
 
-        /*public ref Relation InnerJoin(ref Relation relation1, ref Relation relation2, string header)
+        public Relation CrossJoin(Relation relation1, Relation relation2)
         {
+            Relation result = new Relation(relation1.name + " CROSS JOIN " + relation2.name, relation1.attributeNames.Concat(relation2.attributeNames).ToArray());
 
-            int[] m = new int[relation1.attributes[0].Count];
-            for (int i = 0; i < m.Length; ++i)
+            for (int i = 0; i < relation1.Count + relation2.Count; ++i)
             {
-                m[i] = -1;
+                if (i < relation1.Count)
+                {
+                    if (relation1.types[i] == typeof(Optional<int>))
+                    {
+                        Optional<int>[] new_data = new Optional<int>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<int>> new_attr = new _Attribute<Optional<int>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation1.types[i] == typeof(Optional<float>))
+                    {
+                        Optional<float>[] new_data = new Optional<float>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<float>> new_attr = new _Attribute<Optional<float>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation1.types[i] == typeof(Optional<double>))
+                    {
+                        Optional<double>[] new_data = new Optional<double>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<double>> new_attr = new _Attribute<Optional<double>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                }
+                else
+                {
+                    if (relation2.types[i - relation1.Count] == typeof(Optional<int>))
+                    {
+                        Optional<int>[] new_data = new Optional<int>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<int>> new_attr = new _Attribute<Optional<int>>(relation2.attributeNames[i - relation1.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation2.types[i - relation1.Count] == typeof(Optional<float>))
+                    {
+                        Optional<float>[] new_data = new Optional<float>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<float>> new_attr = new _Attribute<Optional<float>>(relation2.attributeNames[i - relation1.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation2.types[i - relation1.Count] == typeof(Optional<double>))
+                    {
+                        Optional<double>[] new_data = new Optional<double>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<double>> new_attr = new _Attribute<Optional<double>>(relation2.attributeNames[i - relation2.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                }
             }
-            MemoryBuffer1D<int, Stride1D.Dense> mask = this.accelerator.Allocate1D<int>(m);
-
-
-            int index1 = -1;
-            int index2 = -1;
 
             for (int i = 0; i < relation1.Count; ++i)
             {
-                if (relation1.attributeNames[i] == header)
+                if (relation1.types[i] == typeof(Optional<int>))
                 {
-                    index1 = i;
-                    break;
+                    var attr = (_Attribute<Optional<int>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<int>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<int>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation1.types[i] == typeof(Optional<float>))
+                {
+                    var attr = (_Attribute<Optional<float>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<float>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<float>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation1.types[i] == typeof(Optional<double>))
+                {
+                    var attr = (_Attribute<Optional<double>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<double>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<double>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
                 }
             }
 
             for (int i = 0; i < relation2.Count; ++i)
             {
-                if (relation2.attributeNames[i] == header)
+                if (relation2.types[i] == typeof(Optional<int>))
                 {
-                    index2 = i;
-                    break;
+                    var attr = (_Attribute<Optional<int>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<int>>)result.attributes[i + relation1.Count];
+
+                    this.ExecuteCrossJoin<Optional<int>>(attr.GetGPUValues(), res_attr.GetGPUValues(), false, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation2.types[i] == typeof(Optional<float>))
+                {
+                    var attr = (_Attribute<Optional<float>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<float>>)result.attributes[i + relation2.Count];
+
+                    this.ExecuteCrossJoin<Optional<float>>(attr.GetGPUValues(), res_attr.GetGPUValues(), false, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation2.types[i] == typeof(Optional<double>))
+                {
+                    var attr = (_Attribute<Optional<double>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<double>>)result.attributes[i + relation2.Count];
+
+                    this.ExecuteCrossJoin<Optional<double>>(attr.GetGPUValues(), res_attr.GetGPUValues(), false, res_attr.Count);
+                    res_attr.Synchronize();
                 }
             }
 
-            if (relation1.types[index1] == typeof(int))
+            return result;
+        }
+
+        public Relation Union(Relation relation1, Relation relation2)
+        {
+            Relation result = new Relation(relation1.name + " UNION " + relation2.name, relation1.attributeNames);
+
+            for (int i = 0; i < relation1.Count + relation2.Count; ++i)
             {
-                var attr1 = (_Attribute<int>)relation1.attributes[index1];
-                var attr2 = (_Attribute<int>)relation2.attributes[index2];
-                this.ExecuteInnerJoinMaskKernel<int>(attr1.GetGPUValues(), attr2.GetGPUValues(), mask);
-            }
-            else if (relation1.types[index1] == typeof(float))
-            {
-                var attr1 = (_Attribute<float>)relation1.attributes[index1];
-                var attr2 = (_Attribute<float>)relation2.attributes[index2];
-                this.ExecuteInnerJoinMaskKernel<float>(attr1.GetGPUValues(), attr2.GetGPUValues(), mask);
-            }
-            else if (relation1.types[index1] == typeof(double))
-            {
-                var attr1 = (_Attribute<double>)relation1.attributes[index1];
-                var attr2 = (_Attribute<double>)relation2.attributes[index2];
-                this.ExecuteInnerJoinMaskKernel<double>(attr1.GetGPUValues(), attr2.GetGPUValues(), mask);
+                if (i < relation1.Count)
+                {
+                    if (relation1.types[i] == typeof(Optional<int>))
+                    {
+                        Optional<int>[] new_data = new Optional<int>[relation1.attributes[0].Count + relation2.attributes[0].Count];
+                        _Attribute<Optional<int>> new_attr = new _Attribute<Optional<int>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation1.types[i] == typeof(Optional<float>))
+                    {
+                        Optional<float>[] new_data = new Optional<float>[relation1.attributes[0].Count + relation2.attributes[0].Count];
+                        _Attribute<Optional<float>> new_attr = new _Attribute<Optional<float>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation1.types[i] == typeof(Optional<double>))
+                    {
+                        Optional<double>[] new_data = new Optional<double>[relation1.attributes[0].Count + relation2.attributes[0].Count];
+                        _Attribute<Optional<double>> new_attr = new _Attribute<Optional<double>>(relation1.attributeNames[i], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                }
+                else
+                {
+                    if (relation2.types[i - relation1.Count] == typeof(Optional<int>))
+                    {
+                        Optional<int>[] new_data = new Optional<int>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<int>> new_attr = new _Attribute<Optional<int>>(relation2.attributeNames[i - relation1.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation2.types[i - relation1.Count] == typeof(Optional<float>))
+                    {
+                        Optional<float>[] new_data = new Optional<float>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<float>> new_attr = new _Attribute<Optional<float>>(relation2.attributeNames[i - relation1.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                    else if (relation2.types[i - relation1.Count] == typeof(Optional<double>))
+                    {
+                        Optional<double>[] new_data = new Optional<double>[relation1.attributes[0].Count * relation2.attributes[0].Count];
+                        _Attribute<Optional<double>> new_attr = new _Attribute<Optional<double>>(relation2.attributeNames[i - relation2.Count], this.accelerator, new_data);
+                        result.attributes.Add(new_attr);
+                    }
+                }
             }
 
             for (int i = 0; i < relation1.Count; ++i)
             {
-                if (relation1.types[i] == typeof(int))
+                if (relation1.types[i] == typeof(Optional<int>))
                 {
-                    var attr = (_Attribute<int>)relation1.attributes[i];
-                    this.ExecuteInnerJoinKernel<int>(attr.GetGPUValues(), mask);
-                    attr.Synchronize();
+                    var attr = (_Attribute<Optional<int>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<int>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<int>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
                 }
-                else if (relation1.types[i] == typeof(float))
+                else if (relation1.types[i] == typeof(Optional<float>))
                 {
-                    var attr = (_Attribute<float>)relation1.attributes[i];
-                    this.ExecuteInnerJoinKernel<float>(attr.GetGPUValues(), mask);
-                    attr.Synchronize();
+                    var attr = (_Attribute<Optional<float>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<float>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<float>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
                 }
-                else if (relation1.types[i] == typeof(double))
+                else if (relation1.types[i] == typeof(Optional<double>))
                 {
-                    var attr = (_Attribute<double>)relation1.attributes[i];
-                    this.ExecuteInnerJoinKernel<double>(attr.GetGPUValues(), mask);
-                    attr.Synchronize();
+                    var attr = (_Attribute<Optional<double>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<double>>)result.attributes[i];
+
+                    this.ExecuteCrossJoin<Optional<double>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
                 }
             }
+
+            for (int i = 0; i < relation2.Count; ++i)
+            {
+                if (relation2.types[i] == typeof(Optional<int>))
+                {
+                    var attr = (_Attribute<Optional<int>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<int>>)result.attributes[i + relation1.Count];
+
+                    this.ExecuteCrossJoin<Optional<int>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation2.types[i] == typeof(Optional<float>))
+                {
+                    var attr = (_Attribute<Optional<float>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<float>>)result.attributes[i + relation2.Count];
+
+                    this.ExecuteCrossJoin<Optional<float>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+                else if (relation2.types[i] == typeof(Optional<double>))
+                {
+                    var attr = (_Attribute<Optional<double>>)relation1.attributes[i];
+                    var res_attr = (_Attribute<Optional<double>>)result.attributes[i + relation2.Count];
+
+                    this.ExecuteCrossJoin<Optional<double>>(attr.GetGPUValues(), res_attr.GetGPUValues(), true, res_attr.Count);
+                    res_attr.Synchronize();
+                }
+            }
+
+            return result;
         }
-        */
     }
 }
